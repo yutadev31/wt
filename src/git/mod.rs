@@ -36,7 +36,7 @@ fn run_git(cwd: &Path, args: &[&OsStr]) -> anyhow::Result<Vec<u8>> {
         .with_context(|| format!("git {args:?} failed in {}", cwd.display()))
 }
 
-fn repository_name(cwd: &Path) -> anyhow::Result<String> {
+fn repository_root_in(cwd: &Path) -> anyhow::Result<PathBuf> {
     let output = run_git(
         cwd,
         &[
@@ -49,9 +49,20 @@ fn repository_name(cwd: &Path) -> anyhow::Result<String> {
     let git_dir = String::from_utf8(output).context("Git common directory is not valid UTF-8")?;
     let git_dir = PathBuf::from(git_dir.trim_end_matches('\n'));
 
-    let name = git_dir
+    git_dir
         .parent()
-        .and_then(|path| path.file_name())
+        .map(Path::to_path_buf)
+        .context("Failed to determine repository root")
+}
+
+pub fn repository_root() -> anyhow::Result<PathBuf> {
+    repository_root_in(Path::new("."))
+}
+
+fn repository_name(cwd: &Path) -> anyhow::Result<String> {
+    let root = repository_root_in(cwd)?;
+    let name = root
+        .file_name()
         .context("Failed to determine repository name")?;
 
     Ok(name.to_string_lossy().into_owned())
@@ -120,6 +131,38 @@ pub fn create_worktree(branch: &str) -> anyhow::Result<PathBuf> {
         .join("dev/.worktrees");
 
     create_worktree_in(Path::new("."), &root, branch)
+}
+
+fn find_worktree_in(cwd: &Path, branch: &str) -> anyhow::Result<PathBuf> {
+    let output = run_git(
+        cwd,
+        &[
+            "worktree".as_ref(),
+            "list".as_ref(),
+            "--porcelain".as_ref(),
+            "-z".as_ref(),
+        ],
+    )?;
+
+    let output = String::from_utf8(output).context("Worktree list is not valid UTF-8")?;
+    let reference = format!("branch refs/heads/{branch}");
+    let mut path = None;
+
+    for field in output.split('\0') {
+        if let Some(value) = field.strip_prefix("worktree ") {
+            path = Some(PathBuf::from(value));
+        } else if field == reference {
+            return path.context("Missing path in git worktree list");
+        } else if field.is_empty() {
+            path = None;
+        }
+    }
+
+    bail!("No worktree found for branch {branch:?}")
+}
+
+pub fn find_worktree(branch: &str) -> anyhow::Result<PathBuf> {
+    find_worktree_in(Path::new("."), branch)
 }
 
 #[cfg(test)]

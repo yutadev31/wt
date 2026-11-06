@@ -53,10 +53,15 @@ fn creates_worktrees_and_reports_errors() -> anyhow::Result<()> {
         git(&path, &["rev-parse", "HEAD"])?
     );
     assert!(create_worktree_in(&repo, &root, "feat/hoge").is_err());
+    assert_eq!(find_worktree_in(&repo, "feat/hoge")?, path);
+    assert_eq!(find_worktree_in(&path, "main")?, repo);
+    assert_eq!(repository_root_in(&path)?, repo);
+    assert!(find_worktree_in(&repo, "missing").is_err());
 
     git(&repo, &["branch", "existing_branch"])?;
     let existing = create_worktree_in(&path, &root, "existing_branch")?;
     assert_eq!(existing, root.join("repo/existing_ubranch"));
+    assert_eq!(find_worktree_in(&path, "existing_branch")?, existing);
     assert_eq!(
         git(&existing, &["branch", "--show-current"])?.trim(),
         "existing_branch"
