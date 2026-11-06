@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use wt::{
-    git::{create_worktree, find_worktree, list_worktree_branches},
+    git::{create_worktree, find_worktree, list_worktree_branches, remove_worktree},
     integration::herdr::open_worktree,
 };
 
@@ -14,7 +14,7 @@ struct Cli {
 enum CliCommand {
     New { branch: String },
     Open { branch: String },
-    Remove,
+    Remove { branch: String },
     List,
 }
 
@@ -31,7 +31,7 @@ fn main() -> anyhow::Result<()> {
             let path = find_worktree(&branch)?;
             open_worktree(&path)?;
         }
-        CliCommand::Remove => {}
+        CliCommand::Remove { branch } => remove_worktree(&branch)?,
         CliCommand::List => {
             for branch in list_worktree_branches()? {
                 println!("{branch}");

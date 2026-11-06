@@ -82,6 +82,33 @@ fn creates_worktrees_and_reports_errors() -> anyhow::Result<()> {
     assert_eq!(branches_from_worktree, branches);
     assert!(list_worktree_branches_in(&directory.0).is_err());
 
+    assert!(remove_worktree_in(&repo, "missing").is_err());
+    assert!(remove_worktree_in(&path, "main").is_err());
+    assert!(repo.exists());
+
+    fs::write(existing.join("untracked.txt"), "keep this file")?;
+    assert!(remove_worktree_in(&repo, "existing_branch").is_err());
+    assert_eq!(
+        fs::read_to_string(existing.join("untracked.txt"))?,
+        "keep this file"
+    );
+    fs::remove_file(existing.join("untracked.txt"))?;
+
+    git(&repo, &["worktree", "lock", existing.to_str().unwrap()])?;
+    assert!(remove_worktree_in(&repo, "existing_branch").is_err());
+    assert!(existing.exists());
+    git(&repo, &["worktree", "unlock", existing.to_str().unwrap()])?;
+
+    remove_worktree_in(&path, "existing_branch")?;
+    assert!(!existing.exists());
+    assert!(find_worktree_in(&repo, "existing_branch").is_err());
+    assert!(branch_exists(&repo, "existing_branch")?);
+
+    remove_worktree_in(&repo, "feat/hoge")?;
+    assert!(!path.exists());
+    assert_eq!(list_worktree_branches_in(&repo)?, ["main"]);
+    assert!(branch_exists(&repo, "feat/hoge")?);
+
     for invalid in ["", "../escape", "-bad", "bad name"] {
         assert!(create_worktree_in(&repo, &root, invalid).is_err());
     }

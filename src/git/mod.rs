@@ -165,6 +165,26 @@ pub fn find_worktree(branch: &str) -> anyhow::Result<PathBuf> {
     find_worktree_in(Path::new("."), branch)
 }
 
+fn remove_worktree_in(cwd: &Path, branch: &str) -> anyhow::Result<()> {
+    let path = find_worktree_in(cwd, branch)?;
+    run_git(
+        cwd,
+        &[
+            "worktree".as_ref(),
+            "remove".as_ref(),
+            "--".as_ref(),
+            path.as_os_str(),
+        ],
+    )
+    .with_context(|| format!("Failed to remove worktree for branch {branch:?}"))?;
+
+    Ok(())
+}
+
+pub fn remove_worktree(branch: &str) -> anyhow::Result<()> {
+    remove_worktree_in(Path::new("."), branch)
+}
+
 fn list_worktree_branches_in(cwd: &Path) -> anyhow::Result<Vec<String>> {
     let output = run_git(
         cwd,
