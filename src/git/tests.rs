@@ -67,6 +67,21 @@ fn creates_worktrees_and_reports_errors() -> anyhow::Result<()> {
         "existing_branch"
     );
 
+    git(&repo, &["branch", "without-worktree"])?;
+    let detached = directory.0.join("detached");
+    git(
+        &repo,
+        &["worktree", "add", "--detach", detached.to_str().unwrap()],
+    )?;
+
+    let mut branches = list_worktree_branches_in(&repo)?;
+    branches.sort();
+    assert_eq!(branches, ["existing_branch", "feat/hoge", "main"]);
+    let mut branches_from_worktree = list_worktree_branches_in(&path)?;
+    branches_from_worktree.sort();
+    assert_eq!(branches_from_worktree, branches);
+    assert!(list_worktree_branches_in(&directory.0).is_err());
+
     for invalid in ["", "../escape", "-bad", "bad name"] {
         assert!(create_worktree_in(&repo, &root, invalid).is_err());
     }

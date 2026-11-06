@@ -165,5 +165,29 @@ pub fn find_worktree(branch: &str) -> anyhow::Result<PathBuf> {
     find_worktree_in(Path::new("."), branch)
 }
 
+fn list_worktree_branches_in(cwd: &Path) -> anyhow::Result<Vec<String>> {
+    let output = run_git(
+        cwd,
+        &[
+            "worktree".as_ref(),
+            "list".as_ref(),
+            "--porcelain".as_ref(),
+            "-z".as_ref(),
+        ],
+    )?;
+
+    let output = String::from_utf8(output).context("Worktree list is not valid UTF-8")?;
+
+    Ok(output
+        .split('\0')
+        .filter_map(|field| field.strip_prefix("branch refs/heads/"))
+        .map(str::to_owned)
+        .collect())
+}
+
+pub fn list_worktree_branches() -> anyhow::Result<Vec<String>> {
+    list_worktree_branches_in(Path::new("."))
+}
+
 #[cfg(test)]
 mod tests;

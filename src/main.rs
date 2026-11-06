@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use wt::{
-    git::{create_worktree, find_worktree},
+    git::{create_worktree, find_worktree, list_worktree_branches},
     integration::herdr::open_worktree,
 };
 
@@ -32,7 +32,11 @@ fn main() -> anyhow::Result<()> {
             open_worktree(&path)?;
         }
         CliCommand::Remove => {}
-        CliCommand::List => {}
+        CliCommand::List => {
+            for branch in list_worktree_branches()? {
+                println!("{branch}");
+            }
+        }
     }
 
     Ok(())
