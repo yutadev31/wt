@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use wt::{
     config::Config,
@@ -29,7 +30,12 @@ fn main() -> anyhow::Result<()> {
             println!("{}", path.display());
 
             if config.integration.auto_open {
-                open_worktree(&path, &config.integration)?;
+                open_worktree(&path, &config.integration).with_context(|| {
+                    format!(
+                        "Worktree for branch {branch:?} was created at {}, but automatic opening failed; retry with `wt open {branch:?}`",
+                        path.display()
+                    )
+                })?;
             }
         }
         CliCommand::Open { branch } => {

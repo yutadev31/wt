@@ -1,9 +1,9 @@
 use std::{path::Path, process::Command};
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use serde::Deserialize;
 
-use crate::git::repository_root;
+use crate::{git::repository_root, process::check_output};
 
 pub fn open_worktree(path: &Path) -> anyhow::Result<()> {
     open_worktree_with_command(path, None)
@@ -41,39 +41,48 @@ fn open_worktree_in(
         .arg("--cwd")
         .arg(root)
         .output()
-        .with_context(|| format!("Failed to execute herdr for {}", path.display()))?;
+        .with_context(|| {
+            format!("Failed to execute `herdr worktree open` for {}; ensure herdr is installed and available in PATH", path.display())
+        })?;
 
-    if !output.status.success() {
-        bail!(
-            "herdr worktree open failed for {} ({}): {}",
-            path.display(),
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim_end()
-        );
-    }
+    let stdout = check_output(
+        output,
+        &format!("herdr worktree open for {}", path.display()),
+    )?;
 
     if let Some(command) = command {
-        let response: OpenResponse = serde_json::from_slice(&output.stdout)
-            .context("Failed to parse herdr worktree open response")?;
+        let response: OpenResponse = serde_json::from_slice(&stdout).with_context(|| {
+            format!(
+                "herdr worktree open succeeded for {}, but its response was invalid; the configured command was not run",
+                path.display()
+            )
+        })?;
 
         anyhow::ensure!(
-            !response.result.root_pane.pane_id.is_empty(),
-            "herdr worktree open returned an empty pane ID"
+            !response.result.root_pane.pane_id.trim().is_empty(),
+            "herdr worktree open succeeded for {}, but returned an empty pane ID; the configured command was not run",
+            path.display()
         );
 
         let output = executable()
             .args(["pane", "run", &response.result.root_pane.pane_id, command])
             .output()
-            .with_context(|| format!("Failed to execute herdr pane run for {}", path.display()))?;
+            .with_context(|| {
+                format!(
+                    "Worktree {} was opened, but failed to execute `herdr pane run` in pane {:?}",
+                    path.display(),
+                    response.result.root_pane.pane_id
+                )
+            })?;
 
-        if !output.status.success() {
-            bail!(
-                "herdr pane run failed for {} ({}): {}",
-                path.display(),
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim_end()
-            );
-        }
+        check_output(
+            output,
+            &format!(
+                "herdr pane run in pane {:?} for already opened worktree {}",
+                response.result.root_pane.pane_id,
+                path.display()
+            ),
+        )?;
     }
 
     Ok(())
@@ -141,7 +150,22 @@ fi
         fs::write(&response, "invalid JSON")?;
         open_worktree_in(path, root, None, shell_command)?;
         assert!(!fs::read_to_string(&log)?.contains("pane\nrun"));
-        assert!(open_worktree_in(path, root, Some(command), shell_command).is_err());
+        let error = open_worktree_in(path, root, Some(command), shell_command).unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("/worktree with spaces"));
+        assert!(message.contains("configured command was not run"));
+        assert!(message.contains("expected value"));
+
+        for pane_id in ["", "   "] {
+            fs::write(&log, "")?;
+            fs::write(
+                &response,
+                serde_json::json!({"result": {"root_pane": {"pane_id": pane_id}}}).to_string(),
+            )?;
+            let error = open_worktree_in(path, root, Some(command), shell_command).unwrap_err();
+            assert!(error.to_string().contains("empty pane ID"));
+            assert!(!fs::read_to_string(&log)?.contains("pane\nrun"));
+        }
 
         fs::write(&log, "")?;
         fs::write(executable.with_extension("fail-open"), "")?;
@@ -154,6 +178,16 @@ fi
         fs::write(executable.with_extension("fail-run"), "")?;
         let error = open_worktree_in(path, root, Some(command), shell_command).unwrap_err();
         assert!(error.to_string().contains("run rejected"));
+        assert!(error.to_string().contains("already opened worktree"));
+        assert!(error.to_string().contains("w7:p3"));
+
+        let error = open_worktree_in(path, root, None, || {
+            Command::new(directory.0.join("missing-executable"))
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("PATH"));
+        assert!(error.to_string().contains("/worktree with spaces"));
+        assert!(error.downcast_ref::<std::io::Error>().is_some());
 
         Ok(())
     }

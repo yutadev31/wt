@@ -7,6 +7,8 @@ use std::{
 
 use anyhow::{Context, bail};
 
+use crate::process::check_output;
+
 fn encode_branch_name(branch: &str) -> String {
     branch.replace('_', "_u").replace('/', "__")
 }
@@ -19,21 +21,11 @@ fn git_output(cwd: &Path, args: &[&OsStr]) -> anyhow::Result<Output> {
         .with_context(|| format!("Failed to execute git {args:?} in {}", cwd.display()))
 }
 
-fn check_output(output: Output) -> anyhow::Result<Vec<u8>> {
-    if !output.status.success() {
-        bail!(
-            "git failed ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim_end()
-        );
-    }
-
-    Ok(output.stdout)
-}
-
 fn run_git(cwd: &Path, args: &[&OsStr]) -> anyhow::Result<Vec<u8>> {
-    check_output(git_output(cwd, args)?)
-        .with_context(|| format!("git {args:?} failed in {}", cwd.display()))
+    check_output(
+        git_output(cwd, args)?,
+        &format!("git {args:?} in {}", cwd.display()),
+    )
 }
 
 fn repository_root_in(cwd: &Path) -> anyhow::Result<PathBuf> {
@@ -83,12 +75,11 @@ fn branch_exists(repo: &Path, branch: &str) -> anyhow::Result<bool> {
     match output.status.code() {
         Some(0) => Ok(true),
         Some(1) => Ok(false),
-        _ => bail!(
-            "Failed to check branch {branch:?} in {} ({}): {}",
-            repo.display(),
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim_end()
-        ),
+        _ => check_output(
+            output,
+            &format!("Checking branch {branch:?} in {}", repo.display()),
+        )
+        .map(|_| true),
     }
 }
 
@@ -101,7 +92,7 @@ fn create_worktree_in(cwd: &Path, root: &Path, branch: &str) -> anyhow::Result<P
             branch.as_ref(),
         ],
     )
-    .context("Invalid branch name")?;
+    .with_context(|| format!("Failed to validate branch name {branch:?}"))?;
 
     let repo = repository_name(cwd)?;
     let path = root.join(repo).join(encode_branch_name(branch));
@@ -158,7 +149,7 @@ fn find_worktree_in(cwd: &Path, branch: &str) -> anyhow::Result<PathBuf> {
         }
     }
 
-    bail!("No worktree found for branch {branch:?}")
+    bail!("No worktree found for branch {branch:?}; use `wt list` to see available branches")
 }
 
 pub fn find_worktree(branch: &str) -> anyhow::Result<PathBuf> {

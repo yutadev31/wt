@@ -56,7 +56,9 @@ fn creates_worktrees_and_reports_errors() -> anyhow::Result<()> {
     assert_eq!(find_worktree_in(&repo, "feat/hoge")?, path);
     assert_eq!(find_worktree_in(&path, "main")?, repo);
     assert_eq!(repository_root_in(&path)?, repo);
-    assert!(find_worktree_in(&repo, "missing").is_err());
+    let error = find_worktree_in(&repo, "missing").unwrap_err();
+    assert!(error.to_string().contains("missing"));
+    assert!(error.to_string().contains("wt list"));
 
     git(&repo, &["branch", "existing_branch"])?;
     let existing = create_worktree_in(&path, &root, "existing_branch")?;
@@ -110,7 +112,9 @@ fn creates_worktrees_and_reports_errors() -> anyhow::Result<()> {
     assert!(branch_exists(&repo, "feat/hoge")?);
 
     for invalid in ["", "../escape", "-bad", "bad name"] {
-        assert!(create_worktree_in(&repo, &root, invalid).is_err());
+        let error = create_worktree_in(&repo, &root, invalid).unwrap_err();
+        assert!(error.to_string().contains(&format!("{invalid:?}")));
+        assert!(format!("{error:#}").contains("check-ref-format"));
     }
 
     assert!(create_worktree_in(&directory.0, &root, "feature").is_err());
