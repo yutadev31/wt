@@ -1,0 +1,13 @@
+{ pkgs, ... }:
+let
+  pname = "wt";
+  lockfile = builtins.fromTOML (builtins.readFile ../../Cargo.lock);
+  package = builtins.head (builtins.filter (package: package.name == "wt") lockfile.package);
+in
+pkgs.rustPlatform.buildRustPackage {
+  inherit pname;
+  inherit (package) version;
+  src = ../../.;
+  cargoLock.lockFile = ../../Cargo.lock;
+  nativeCheckInputs = [ pkgs.git ];
+}

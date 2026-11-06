@@ -26,16 +26,16 @@ struct Pane {
 
 pub fn open_worktree_with_command(path: &Path, command: Option<&str>) -> anyhow::Result<()> {
     let root = repository_root()?;
-    open_worktree_in(path, &root, command, Path::new("herdr"))
+    open_worktree_in(path, &root, command, || Command::new("herdr"))
 }
 
 fn open_worktree_in(
     path: &Path,
     root: &Path,
     command: Option<&str>,
-    executable: &Path,
+    executable: impl Fn() -> Command,
 ) -> anyhow::Result<()> {
-    let output = Command::new(executable)
+    let output = executable()
         .args(["worktree", "open", "--path"])
         .arg(path)
         .arg("--cwd")
@@ -61,7 +61,7 @@ fn open_worktree_in(
             "herdr worktree open returned an empty pane ID"
         );
 
-        let output = Command::new(executable)
+        let output = executable()
             .args(["pane", "run", &response.result.root_pane.pane_id, command])
             .output()
             .with_context(|| format!("Failed to execute herdr pane run for {}", path.display()))?;
@@ -82,7 +82,7 @@ fn open_worktree_in(
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::SystemTime};
+    use std::{fs, path::PathBuf, time::SystemTime};
 
     struct TestDirectory(PathBuf);
 
@@ -118,14 +118,18 @@ elif [ -f "$0.fail-run" ]; then
 fi
 "##,
         )?;
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
+        let shell_command = || {
+            let mut shell = Command::new("sh");
+            shell.arg(&executable);
+            shell
+        };
         let response = executable.with_extension("response");
         let log = executable.with_extension("log");
         fs::write(&response, r#"{"result":{"root_pane":{"pane_id":"w7:p3"}}}"#)?;
         let path = Path::new("/worktree with spaces");
         let root = Path::new("/repository");
         let command = "printf '%s' 'hello world' && cargo test";
-        open_worktree_in(path, root, Some(command), &executable)?;
+        open_worktree_in(path, root, Some(command), shell_command)?;
         assert_eq!(
             fs::read_to_string(&log)?,
             format!(
@@ -135,20 +139,20 @@ fi
 
         fs::write(&log, "")?;
         fs::write(&response, "invalid JSON")?;
-        open_worktree_in(path, root, None, &executable)?;
+        open_worktree_in(path, root, None, shell_command)?;
         assert!(!fs::read_to_string(&log)?.contains("pane\nrun"));
-        assert!(open_worktree_in(path, root, Some(command), &executable).is_err());
+        assert!(open_worktree_in(path, root, Some(command), shell_command).is_err());
 
         fs::write(&log, "")?;
         fs::write(executable.with_extension("fail-open"), "")?;
-        let error = open_worktree_in(path, root, Some(command), &executable).unwrap_err();
+        let error = open_worktree_in(path, root, Some(command), shell_command).unwrap_err();
         assert!(error.to_string().contains("open rejected"));
         assert!(!fs::read_to_string(&log)?.contains("pane\nrun"));
 
         fs::remove_file(executable.with_extension("fail-open"))?;
         fs::write(&response, r#"{"result":{"root_pane":{"pane_id":"w7:p3"}}}"#)?;
         fs::write(executable.with_extension("fail-run"), "")?;
-        let error = open_worktree_in(path, root, Some(command), &executable).unwrap_err();
+        let error = open_worktree_in(path, root, Some(command), shell_command).unwrap_err();
         assert!(error.to_string().contains("run rejected"));
 
         Ok(())
