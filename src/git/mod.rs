@@ -5,7 +5,7 @@ use std::{
     process::{Command, Output},
 };
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 
 use crate::process::check_output;
 
@@ -124,6 +124,17 @@ pub fn create_worktree(branch: &str) -> anyhow::Result<PathBuf> {
     create_worktree_in(Path::new("."), &root, branch)
 }
 
+#[derive(Debug)]
+pub struct WorktreeNotFound(String);
+
+impl std::fmt::Display for WorktreeNotFound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "No worktree found for branch {:?}", self.0)
+    }
+}
+
+impl std::error::Error for WorktreeNotFound {}
+
 fn find_worktree_in(cwd: &Path, branch: &str) -> anyhow::Result<PathBuf> {
     let output = run_git(
         cwd,
@@ -149,7 +160,7 @@ fn find_worktree_in(cwd: &Path, branch: &str) -> anyhow::Result<PathBuf> {
         }
     }
 
-    bail!("No worktree found for branch {branch:?}; use `wt list` to see available branches")
+    Err(WorktreeNotFound(branch.to_owned()).into())
 }
 
 pub fn find_worktree(branch: &str) -> anyhow::Result<PathBuf> {
@@ -262,7 +273,7 @@ mod tests {
         assert_eq!(repository_root_in(&path)?, repo);
         let error = find_worktree_in(&repo, "missing").unwrap_err();
         assert!(error.to_string().contains("missing"));
-        assert!(error.to_string().contains("wt list"));
+        assert!(error.downcast_ref::<WorktreeNotFound>().is_some());
 
         git(&repo, &["branch", "existing_branch"])?;
         let existing = create_worktree_in(&path, &root, "existing_branch")?;
